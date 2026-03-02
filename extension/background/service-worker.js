@@ -829,9 +829,89 @@ async function scrapeLazada(_regionCode, _regionName) {
   return [];
 }
 
-async function scrapeBlibli(_regionCode, _regionName) {
-  // TODO: Implement Blibli scraper
-  return [];
+// ── Blibli Scraper ──────────────────────────────────────────
+
+/**
+ * Build a Blibli search URL for a given region.
+ * Blibli's search page is at /cari/{keyword} with query parameters.
+ * The `intent=true` parameter triggers a broader search.
+ * @param {string} _regionName — human-readable region name (not used for URL filtering)
+ * @returns {string}
+ */
+function buildBlibliSearchUrl(_regionName) {
+  // Blibli search does not natively support region-based filtering in the URL.
+  // We use a generic search to discover merchants, then the content script
+  // extracts location data from each product card.
+  return 'https://www.blibli.com/cari/?keyword=&intent=true';
+}
+
+/**
+ * Scrape Blibli merchants for a given region.
+ *
+ * Flow:
+ *   1. Open a new tab to the Blibli search page
+ *   2. Wait for the tab to finish loading
+ *   3. Send a `startScrape` message to the content script
+ *   4. Await the response containing merchant data
+ *   5. Close the tab
+ *   6. Return the merchants array
+ *
+ * @param {string} regionCode
+ * @param {string} regionName
+ * @returns {Promise<Array<Object>>}
+ */
+async function scrapeBlibli(regionCode, regionName) {
+  const SCRAPE_TIMEOUT_MS = 120000; // 2 minutes max per scrape
+
+  const searchUrl = buildBlibliSearchUrl(regionName);
+  console.log(`[SE] Opening Blibli search: ${searchUrl}`);
+
+  let tab;
+
+  try {
+    // 1. Open a new tab
+    tab = await chrome.tabs.create({ url: searchUrl, active: false });
+
+    // 2. Wait for the tab to finish loading
+    await waitForTabLoad(tab.id);
+
+    // 3. Small delay to let the SPA finish rendering
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
+    // 4. Send the startScrape message and await response
+    const response = await sendMessageWithTimeout(
+      tab.id,
+      {
+        action: 'startScrape',
+        platform: 'blibli',
+        regionCode,
+        regionName,
+      },
+      SCRAPE_TIMEOUT_MS
+    );
+
+    if (response && response.success && Array.isArray(response.merchants)) {
+      console.log(
+        `[SE] Blibli scrape complete: ${response.merchants.length} merchants`
+      );
+      return response.merchants;
+    }
+
+    console.warn('[SE] Blibli scrape returned no data:', response);
+    return [];
+  } catch (err) {
+    console.error('[SE] Blibli scrape failed:', err);
+    return [];
+  } finally {
+    // 5. Close the tab regardless of outcome
+    if (tab && tab.id) {
+      try {
+        await chrome.tabs.remove(tab.id);
+      } catch {
+        // Tab may already be closed
+      }
+    }
+  }
 }
 
 /**

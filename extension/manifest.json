@@ -53,6 +53,16 @@
       "run_at": "document_idle"
     },
     {
+      "matches": ["https://www.lazada.co.id/*", "https://*.lazada.co.id/*"],
+      "js": ["content-scripts/lazada.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.blibli.com/*", "https://blibli.com/*"],
+      "js": ["content-scripts/blibli.js"],
+      "run_at": "document_idle"
+    },
+    {
       "matches": ["https://www.zalora.co.id/*", "https://*.zalora.co.id/*"],
       "js": ["content-scripts/zalora.js"],
       "run_at": "document_idle"

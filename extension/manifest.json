@@ -46,6 +46,11 @@
       "matches": ["https://food.grab.com/*"],
       "js": ["content-scripts/grabfood.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://gofood.co.id/*", "https://*.gofood.co.id/*"],
+      "js": ["content-scripts/gofood.js"],
+      "run_at": "document_idle"
     }
   ],
   "icons": {

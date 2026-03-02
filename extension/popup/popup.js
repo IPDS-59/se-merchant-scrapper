@@ -54,14 +54,14 @@
   /**
    * Populate a <select> with option data.
    * @param {HTMLSelectElement} selectEl
-   * @param {Array<{kode: string, nama: string}>} items
+   * @param {Array<{kode_bps: string, nama_bps: string}>} items
    */
   function populateSelect(selectEl, items) {
     clearSelect(selectEl);
     for (const item of items) {
       const opt = document.createElement('option');
-      opt.value = item.kode;
-      opt.textContent = titleCase(item.nama);
+      opt.value = item.kode_bps;
+      opt.textContent = titleCase(item.nama_bps);
       selectEl.appendChild(opt);
     }
     selectEl.disabled = false;
@@ -111,7 +111,7 @@
    * Fetch regions from the BPS Wilayah API with local caching.
    * @param {'provinsi'|'kabupaten'|'kecamatan'} [level='provinsi']
    * @param {string} [parentCode='']
-   * @returns {Promise<Array<{kode: string, nama: string}>>}
+   * @returns {Promise<Array<{kode_bps: string, nama_bps: string}>>}
    */
   async function fetchBpsRegions(level = 'provinsi', parentCode = '') {
     const cacheKey = `${level}_${parentCode}`;

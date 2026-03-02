@@ -369,9 +369,154 @@ function sendMessageWithTimeout(tabId, message, timeoutMs) {
 // Remaining scrapers return empty arrays for now.
 // Actual implementations will be added in subsequent tasks.
 
-async function scrapeShopee(_regionCode, _regionName) {
-  // TODO: Implement Shopee scraper
-  return [];
+// ── Shopee Scraper ──────────────────────────────────────────
+
+/**
+ * Shopee location mapping. Maps BPS province names to Shopee's
+ * `locations` search filter values. Shopee uses title-case
+ * province/region names in the search URL parameter.
+ */
+const SHOPEE_LOCATION_MAP = {
+  'ACEH': 'Aceh',
+  'SUMATERA UTARA': 'Sumatera Utara',
+  'SUMATERA BARAT': 'Sumatera Barat',
+  'RIAU': 'Riau',
+  'JAMBI': 'Jambi',
+  'SUMATERA SELATAN': 'Sumatera Selatan',
+  'BENGKULU': 'Bengkulu',
+  'LAMPUNG': 'Lampung',
+  'KEPULAUAN BANGKA BELITUNG': 'Kepulauan Bangka Belitung',
+  'KEPULAUAN RIAU': 'Kepulauan Riau',
+  'DKI JAKARTA': 'DKI Jakarta',
+  'JAWA BARAT': 'Jawa Barat',
+  'JAWA TENGAH': 'Jawa Tengah',
+  'DI YOGYAKARTA': 'DI Yogyakarta',
+  'JAWA TIMUR': 'Jawa Timur',
+  'BANTEN': 'Banten',
+  'BALI': 'Bali',
+  'NUSA TENGGARA BARAT': 'Nusa Tenggara Barat',
+  'NUSA TENGGARA TIMUR': 'Nusa Tenggara Timur',
+  'KALIMANTAN BARAT': 'Kalimantan Barat',
+  'KALIMANTAN TENGAH': 'Kalimantan Tengah',
+  'KALIMANTAN SELATAN': 'Kalimantan Selatan',
+  'KALIMANTAN TIMUR': 'Kalimantan Timur',
+  'KALIMANTAN UTARA': 'Kalimantan Utara',
+  'SULAWESI UTARA': 'Sulawesi Utara',
+  'SULAWESI TENGAH': 'Sulawesi Tengah',
+  'SULAWESI SELATAN': 'Sulawesi Selatan',
+  'SULAWESI TENGGARA': 'Sulawesi Tenggara',
+  'GORONTALO': 'Gorontalo',
+  'SULAWESI BARAT': 'Sulawesi Barat',
+  'MALUKU': 'Maluku',
+  'MALUKU UTARA': 'Maluku Utara',
+  'PAPUA': 'Papua',
+  'PAPUA BARAT': 'Papua Barat',
+  'PAPUA BARAT DAYA': 'Papua Barat Daya',
+  'PAPUA TENGAH': 'Papua Tengah',
+  'PAPUA PEGUNUNGAN': 'Papua Pegunungan',
+  'PAPUA SELATAN': 'Papua Selatan',
+};
+
+/**
+ * Build a Shopee search URL filtered by region/location.
+ * @param {string} regionName — human-readable region name (typically uppercase BPS name)
+ * @returns {string}
+ */
+function buildShopeeSearchUrl(regionName) {
+  const base = 'https://shopee.co.id/search';
+  const params = new URLSearchParams({
+    keyword: '',
+  });
+
+  // Try exact match first (BPS names are uppercase)
+  const upperName = regionName.toUpperCase().trim();
+  if (SHOPEE_LOCATION_MAP[upperName]) {
+    params.set('locations', SHOPEE_LOCATION_MAP[upperName]);
+  } else {
+    // Fuzzy match: find the first location key that contains the region name
+    for (const [key, locationName] of Object.entries(SHOPEE_LOCATION_MAP)) {
+      if (
+        key.includes(upperName) ||
+        upperName.includes(key) ||
+        locationName.toLowerCase().includes(regionName.toLowerCase())
+      ) {
+        params.set('locations', locationName);
+        break;
+      }
+    }
+  }
+
+  return `${base}?${params.toString()}`;
+}
+
+/**
+ * Scrape Shopee merchants for a given region.
+ *
+ * Flow:
+ *   1. Map regionName to Shopee location name
+ *   2. Open a new tab to the Shopee search page filtered by location
+ *   3. Wait for the content script to be ready
+ *   4. Send a `startScrape` message to the content script
+ *   5. Await the response containing merchant data
+ *   6. Close the tab
+ *   7. Return the merchants array
+ *
+ * @param {string} regionCode
+ * @param {string} regionName
+ * @returns {Promise<Array<Object>>}
+ */
+async function scrapeShopee(regionCode, regionName) {
+  const SCRAPE_TIMEOUT_MS = 180000; // 3 minutes — Shopee loads slowly
+
+  const searchUrl = buildShopeeSearchUrl(regionName);
+  console.log(`[SE] Opening Shopee search: ${searchUrl}`);
+
+  let tab;
+
+  try {
+    // 1. Open a new tab
+    tab = await chrome.tabs.create({ url: searchUrl, active: false });
+
+    // 2. Wait for the tab to finish loading
+    await waitForTabLoad(tab.id);
+
+    // 3. Extra delay — Shopee SPA needs time to hydrate and render
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
+    // 4. Send the startScrape message and await response
+    const response = await sendMessageWithTimeout(
+      tab.id,
+      {
+        action: 'startScrape',
+        platform: 'shopee',
+        regionCode,
+        regionName,
+      },
+      SCRAPE_TIMEOUT_MS
+    );
+
+    if (response && response.success && Array.isArray(response.merchants)) {
+      console.log(
+        `[SE] Shopee scrape complete: ${response.merchants.length} merchants`
+      );
+      return response.merchants;
+    }
+
+    console.warn('[SE] Shopee scrape returned no data:', response);
+    return [];
+  } catch (err) {
+    console.error('[SE] Shopee scrape failed:', err);
+    return [];
+  } finally {
+    // 5. Close the tab regardless of outcome
+    if (tab && tab.id) {
+      try {
+        await chrome.tabs.remove(tab.id);
+      } catch {
+        // Tab may already be closed
+      }
+    }
+  }
 }
 
 // ── GrabFood Scraper ────────────────────────────────────────
@@ -504,9 +649,179 @@ async function scrapeGrabFood(regionCode, regionName) {
   }
 }
 
-async function scrapeGoFood(_regionCode, _regionName) {
-  // TODO: Implement GoFood scraper
-  return [];
+// ── GoFood Scraper ──────────────────────────────────────────
+
+/**
+ * GoFood city mapping. Maps BPS province/region names to GoFood
+ * city slugs used in URL paths.
+ * GoFood URL pattern: https://gofood.co.id/{city-slug}/restaurants
+ *
+ * Note: GoFood organises listings by city, not province. For provinces
+ * that span multiple cities, we map to the capital / largest city.
+ */
+const GOFOOD_CITY_MAP = {
+  'DKI JAKARTA': 'jakarta',
+  'Jakarta': 'jakarta',
+  'JAWA BARAT': 'bandung',
+  'Bandung': 'bandung',
+  'JAWA TIMUR': 'surabaya',
+  'Surabaya': 'surabaya',
+  'JAWA TENGAH': 'semarang',
+  'Semarang': 'semarang',
+  'DI YOGYAKARTA': 'yogyakarta',
+  'Yogyakarta': 'yogyakarta',
+  'SUMATERA UTARA': 'medan',
+  'Medan': 'medan',
+  'SULAWESI SELATAN': 'makassar',
+  'Makassar': 'makassar',
+  'SUMATERA SELATAN': 'palembang',
+  'Palembang': 'palembang',
+  'BALI': 'bali',
+  'Denpasar': 'bali',
+  'Malang': 'malang',
+  'Bekasi': 'bekasi',
+  'BANTEN': 'tangerang',
+  'Tangerang': 'tangerang',
+  'Depok': 'depok',
+  'Bogor': 'bogor',
+  'KALIMANTAN TIMUR': 'balikpapan',
+  'Balikpapan': 'balikpapan',
+  'SULAWESI UTARA': 'manado',
+  'Manado': 'manado',
+  'KALIMANTAN BARAT': 'pontianak',
+  'Pontianak': 'pontianak',
+  'KALIMANTAN SELATAN': 'banjarmasin',
+  'Banjarmasin': 'banjarmasin',
+  'SUMATERA BARAT': 'padang',
+  'Padang': 'padang',
+  'RIAU': 'pekanbaru',
+  'Pekanbaru': 'pekanbaru',
+  'LAMPUNG': 'bandar-lampung',
+  'Bandar Lampung': 'bandar-lampung',
+  'Solo': 'solo',
+  'Surakarta': 'solo',
+  'KEPULAUAN RIAU': 'batam',
+  'Batam': 'batam',
+  'ACEH': 'banda-aceh',
+  'Banda Aceh': 'banda-aceh',
+  'NUSA TENGGARA BARAT': 'mataram',
+  'Mataram': 'mataram',
+  'KALIMANTAN TENGAH': 'palangkaraya',
+  'Palangkaraya': 'palangkaraya',
+};
+
+/**
+ * Build a GoFood restaurants URL for a given region.
+ * @param {string} regionName — human-readable region name
+ * @returns {{ url: string, citySlug: string }}
+ */
+function buildGoFoodUrl(regionName) {
+  const baseUrl = 'https://gofood.co.id';
+
+  // Try exact match first (BPS names are uppercase)
+  const upperName = regionName.toUpperCase().trim();
+  if (GOFOOD_CITY_MAP[upperName]) {
+    const slug = GOFOOD_CITY_MAP[upperName];
+    return {
+      url: `${baseUrl}/${slug}/restaurants`,
+      citySlug: slug,
+    };
+  }
+
+  // Fuzzy match: find the first key that contains the region name
+  for (const [key, citySlug] of Object.entries(GOFOOD_CITY_MAP)) {
+    if (
+      regionName.toLowerCase().includes(key.toLowerCase()) ||
+      key.toLowerCase().includes(regionName.toLowerCase())
+    ) {
+      return {
+        url: `${baseUrl}/${citySlug}/restaurants`,
+        citySlug,
+      };
+    }
+  }
+
+  // Fallback: try using the region name directly as a slug
+  const fallbackSlug = regionName
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '');
+
+  return {
+    url: `${baseUrl}/${fallbackSlug}/restaurants`,
+    citySlug: fallbackSlug,
+  };
+}
+
+/**
+ * Scrape GoFood restaurants for a given region.
+ *
+ * Flow:
+ *   1. Map regionName to a GoFood city URL slug
+ *   2. Open a new tab to the GoFood restaurants page for that city
+ *   3. Wait for the tab to finish loading
+ *   4. Send a `startScrape` message to the content script
+ *   5. Collect results from the content script response
+ *   6. Close the tab
+ *   7. Return the merchants array
+ *
+ * @param {string} regionCode
+ * @param {string} regionName
+ * @returns {Promise<Array<Object>>}
+ */
+async function scrapeGoFood(regionCode, regionName) {
+  const SCRAPE_TIMEOUT_MS = 180000; // 3 minutes
+
+  const { url: searchUrl, citySlug } = buildGoFoodUrl(regionName);
+  console.log(`[SE] Opening GoFood restaurants: ${searchUrl} (city: ${citySlug})`);
+
+  let tab;
+
+  try {
+    // 1. Open a new tab
+    tab = await chrome.tabs.create({ url: searchUrl, active: false });
+
+    // 2. Wait for the tab to finish loading
+    await waitForTabLoad(tab.id);
+
+    // 3. Extra delay for SPA hydration and initial render
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
+    // 4. Send the startScrape message and await response
+    const response = await sendMessageWithTimeout(
+      tab.id,
+      {
+        action: 'startScrape',
+        platform: 'gofood',
+        regionCode,
+        regionName,
+      },
+      SCRAPE_TIMEOUT_MS
+    );
+
+    if (response && response.success && Array.isArray(response.merchants)) {
+      console.log(
+        `[SE] GoFood scrape complete: ${response.merchants.length} merchants`
+      );
+      return response.merchants;
+    }
+
+    console.warn('[SE] GoFood scrape returned no data:', response);
+    return [];
+  } catch (err) {
+    console.error('[SE] GoFood scrape failed:', err);
+    return [];
+  } finally {
+    // 5. Close the tab regardless of outcome
+    if (tab && tab.id) {
+      try {
+        await chrome.tabs.remove(tab.id);
+      } catch {
+        // Tab may already be closed
+      }
+    }
+  }
 }
 
 async function scrapeLazada(_regionCode, _regionName) {

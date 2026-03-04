@@ -1,14 +1,102 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum RegionLevel {
+  province
+  regency
+  district
+}
+
+enum Platform {
+  tokopedia
+  shopee
+  grabfood
+  gofood
+  lazada
+  blibli
+  zalora
+}
+
+enum ScrapeStatus {
+  running
+  completed
+  failed
+}
+
+enum UserRole {
+  admin
+  staff
+}
+
+model Region {
+  id        Int         @id @default(autoincrement())
+  code      String      @unique @db.VarChar(10)
+  name      String      @db.VarChar(255)
+  level     RegionLevel
+  parentId  Int?
+  parent    Region?     @relation("RegionHierarchy", fields: [parentId], references: [id])
+  children  Region[]    @relation("RegionHierarchy")
+  merchants Merchant[]
+  sessions  ScrapeSession[]
+
+  @@index([code, level])
+  @@index([parentId])
+}
+
+model Merchant {
+  id                 Int      @id @default(autoincrement())
+  regionId           Int
+  region             Region   @relation(fields: [regionId], references: [id])
+  platform           Platform
+  name               String   @db.VarChar(500)
+  address            String?  @db.Text
+  category           String?  @db.VarChar(255)
+  phone              String?  @db.VarChar(50)
+  rating             Float?
+  productCount       Int?
+  joinDate           DateTime?
+  monthlySales       Int?
+  totalTransactions  Int?
+  operatingHours     String?  @db.VarChar(500)
+  socialMediaLinks   Json?
+  ownerName          String?  @db.VarChar(255)
+  sourceUrl          String?  @db.Text
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([regionId, platform])
+  @@index([platform])
+  @@index([createdAt])
+}
+
+model ScrapeSession {
+  id             Int          @id @default(autoincrement())
+  userId         Int
+  user           User         @relation(fields: [userId], references: [id])
+  regionId       Int
+  region         Region       @relation(fields: [regionId], references: [id])
+  platform       Platform
+  totalMerchants Int          @default(0)
+  status         ScrapeStatus @default(running)
+  startedAt      DateTime     @default(now())
+  completedAt    DateTime?
+
+  @@index([userId])
+  @@index([regionId])
+}
+
+model User {
+  id           Int             @id @default(autoincrement())
+  name         String          @db.VarChar(255)
+  email        String          @unique @db.VarChar(255)
+  passwordHash String          @db.VarChar(255)
+  role         UserRole        @default(staff)
+  createdAt    DateTime        @default(now())
+  sessions     ScrapeSession[]
 }
